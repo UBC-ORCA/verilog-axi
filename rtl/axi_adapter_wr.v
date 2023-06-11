@@ -222,6 +222,8 @@ reg                     m_axi_wvalid_int;
 reg                     m_axi_wready_int_reg = 1'b0;
 wire                    m_axi_wready_int_early;
 
+reg _dummy; //dummy signal to replicate value of 0 with concatenation
+
 assign s_axi_awready = s_axi_awready_reg;
 assign s_axi_wready = s_axi_wready_reg;
 assign s_axi_bid = s_axi_bid_reg;
@@ -355,7 +357,7 @@ always @* begin
         endcase
     end else if (EXPAND) begin
         // master output is wider; merge writes
-        m_axi_wdata_int = {(M_WORD_WIDTH/S_WORD_WIDTH){s_axi_wdata}};
+        {_dummy, m_axi_wdata_int} = {1'b0, {(M_WORD_WIDTH/S_WORD_WIDTH){s_axi_wdata}}};
         m_axi_wstrb_int = s_axi_wstrb;
         m_axi_wlast_int = s_axi_wlast;
         m_axi_wuser_int = s_axi_wuser;
@@ -413,7 +415,7 @@ always @* begin
                 s_axi_wready_next = m_axi_wready_int_early;
 
                 if (s_axi_wready && s_axi_wvalid) begin
-                    m_axi_wdata_int = {(M_WORD_WIDTH/S_WORD_WIDTH){s_axi_wdata}};
+                    {_dummy, m_axi_wdata_int} = {1'b0, {(M_WORD_WIDTH/S_WORD_WIDTH){s_axi_wdata}}};
                     m_axi_wstrb_int = s_axi_wstrb << (addr_reg[M_ADDR_BIT_OFFSET-1:S_ADDR_BIT_OFFSET] * S_STRB_WIDTH);
                     m_axi_wlast_int = s_axi_wlast;
                     m_axi_wuser_int = s_axi_wuser;
