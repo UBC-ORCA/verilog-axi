@@ -214,6 +214,7 @@ reg m_axi_awvalid_reg = 1'b0, m_axi_awvalid_next;
 reg m_axi_bready_reg = 1'b0, m_axi_bready_next;
 
 // internal datapath
+reg                     _dummy;           //dummy signal to replicate value of 0 with concatenation
 reg  [M_DATA_WIDTH-1:0] m_axi_wdata_int;
 reg  [M_STRB_WIDTH-1:0] m_axi_wstrb_int;
 reg                     m_axi_wlast_int;
@@ -221,8 +222,6 @@ reg  [WUSER_WIDTH-1:0]  m_axi_wuser_int;
 reg                     m_axi_wvalid_int;
 reg                     m_axi_wready_int_reg = 1'b0;
 wire                    m_axi_wready_int_early;
-
-reg _dummy; //dummy signal to replicate value of 0 with concatenation
 
 assign s_axi_awready = s_axi_awready_reg;
 assign s_axi_wready = s_axi_wready_reg;
@@ -507,17 +506,17 @@ always @* begin
                     id_next = s_axi_awid;
                     m_axi_awid_next = s_axi_awid;
                     m_axi_awaddr_next = s_axi_awaddr;
-                    addr_next = s_axi_awaddr;
+                    addr_next = 'b0;
                     burst_next = s_axi_awlen;
                     burst_size_next = s_axi_awsize;
                     burst_active_next = 1'b1;
                     if (s_axi_awsize > M_BURST_SIZE) begin
                         // need to adjust burst size
-                        if (s_axi_awlen >> (8+M_BURST_SIZE-s_axi_awsize) != 0) begin
+                        if ({s_axi_awlen, {S_BURST_SIZE-M_BURST_SIZE{1'b1}}} >> (S_BURST_SIZE-s_axi_awsize) > 255) begin
                             // limit burst length to max
-                            master_burst_next = (8'd255 << (s_axi_awsize-M_BURST_SIZE)) | ((~s_axi_awaddr & (8'hff >> (8-s_axi_awsize))) >> M_BURST_SIZE);
+                            master_burst_next = 8'd255;
                         end else begin
-                            master_burst_next = (s_axi_awlen << (s_axi_awsize-M_BURST_SIZE)) | ((~s_axi_awaddr & (8'hff >> (8-s_axi_awsize))) >> M_BURST_SIZE);
+                            master_burst_next = {s_axi_awlen, {S_BURST_SIZE-M_BURST_SIZE{1'b1}}} >> (S_BURST_SIZE-s_axi_awsize);
                         end
                         master_burst_size_next = M_BURST_SIZE;
                         m_axi_awlen_next = master_burst_next;
@@ -558,7 +557,7 @@ always @* begin
                     burst_next = burst_reg - 1;
                     burst_active_next = burst_reg != 0;
                     master_burst_next = master_burst_reg - 1;
-                    addr_next = (addr_reg + (1 << master_burst_size_reg)) & ({ADDR_WIDTH{1'b1}} << master_burst_size_reg);
+                    addr_next = addr_reg + (1 << master_burst_size_reg);
                     if (master_burst_reg == 0) begin
                         s_axi_wready_next = 1'b0;
                         m_axi_bready_next = !s_axi_bvalid && !s_axi_awvalid;
@@ -584,7 +583,7 @@ always @* begin
                     m_axi_wuser_int = wuser_reg;
                     m_axi_wvalid_int = 1'b1;
                     master_burst_next = master_burst_reg - 1;
-                    addr_next = (addr_reg + (1 << master_burst_size_reg)) & ({ADDR_WIDTH{1'b1}} << master_burst_size_reg);
+                    addr_next = addr_reg + (1 << master_burst_size_reg);
                     if (master_burst_reg == 0) begin
                         // burst on master interface finished; transfer response
                         s_axi_wready_next = 1'b0;
@@ -612,19 +611,27 @@ always @* begin
                     if (first_transfer_reg || m_axi_bresp != 0) begin
                         s_axi_bresp_next = m_axi_bresp;
                     end
-
-                    if (burst_reg >> (8+M_BURST_SIZE-burst_size_reg) != 0) begin
-                        // limit burst length to max
-                        master_burst_next = 8'd255;
-                    end else begin
-                        master_burst_next = (burst_reg << (burst_size_reg-M_BURST_SIZE)) | (8'hff >> (8-burst_size_reg) >> M_BURST_SIZE);
-                    end
-                    master_burst_size_next = M_BURST_SIZE;
-                    m_axi_awaddr_next = addr_reg;
-                    m_axi_awlen_next = master_burst_next;
-                    m_axi_awsize_next = master_burst_size_next;
                     if (burst_active_reg) begin
                         // burst on slave interface still active; start new burst
+                        m_axi_awaddr_next = addr_reg;
+                        if (burst_size_reg > M_BURST_SIZE) begin
+                            // need to adjust burst size
+                            if ({burst_reg, {S_BURST_SIZE-M_BURST_SIZE{1'b1}}} >> (S_BURST_SIZE-burst_size_reg) > 255) begin
+                                // limit burst length to max
+                                master_burst_next = 8'd255;
+                            end else begin
+                                master_burst_next = {burst_reg, {S_BURST_SIZE-M_BURST_SIZE{1'b1}}} >> (S_BURST_SIZE-burst_size_reg);
+                            end
+                            master_burst_size_next = M_BURST_SIZE;
+                            m_axi_awlen_next = master_burst_next;
+                            m_axi_awsize_next = master_burst_size_next;
+                        end else begin
+                            // pass through narrow (enough) burst
+                            master_burst_next = burst_reg;
+                            master_burst_size_next = burst_size_reg;
+                            m_axi_awlen_next = burst_reg;
+                            m_axi_awsize_next = burst_size_reg;
+                        end
                         m_axi_awvalid_next = 1'b1;
                         state_next = STATE_DATA;
                     end else begin
